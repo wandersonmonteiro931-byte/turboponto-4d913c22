@@ -1,32 +1,36 @@
 @echo off
 setlocal EnableExtensions
 chcp 65001 >nul
-title Atualizar TurboPonto no GitHub
+title Atualizar TurboPonto - GitHub e Lovable
 
 cd /d "%~dp0"
 
 set "REPO_URL=https://github.com/wandersonmonteiro931-byte/turboponto-4d913c22.git"
 set "BRANCH=main"
+set "LOVABLE_URL=https://lovable.dev/projects/b4f6b092-2e46-440d-a020-7e18d929f17f"
+set "PROMPT_FILE=APLICAR_BANCO_NO_LOVABLE.txt"
 
 echo ==================================================
-echo       ATUALIZACAO AUTOMATICA - TURBOPONTO
+echo        ATUALIZACAO AUTOMATICA - TURBOPONTO
+echo                 GITHUB + LOVABLE
 echo ==================================================
 echo.
 
 where git >nul 2>&1
 if errorlevel 1 (
     echo ERRO: O Git nao esta instalado neste computador.
-    echo Instale o Git para Windows e execute este arquivo novamente.
+    echo Instale o Git para Windows e execute novamente:
     echo https://git-scm.com/download/win
     echo.
     pause
     exit /b 1
 )
 
+echo [1/2] Enviando os arquivos para o GitHub...
+
 if not exist ".git" (
-    echo Preparando o projeto para o GitHub...
     git init
-    if errorlevel 1 goto :erro
+    if errorlevel 1 goto :erro_git
 )
 
 git config user.name >nul 2>&1
@@ -42,58 +46,52 @@ if errorlevel 1 (
     git remote set-url origin "%REPO_URL%"
 )
 
+git fetch origin "%BRANCH%"
+if not errorlevel 1 git reset --mixed "origin/%BRANCH%" >nul 2>&1
+
 git branch -M "%BRANCH%" >nul 2>&1
-
-echo Buscando a versao atual do GitHub...
-git fetch origin "%BRANCH%" >nul 2>&1
-if not errorlevel 1 (
-    rem Mantem os arquivos desta pasta e usa o GitHub apenas como base.
-    git reset --mixed "origin/%BRANCH%" >nul 2>&1
-)
-
-echo Preparando os arquivos...
 git add -A
-if errorlevel 1 goto :erro
+if errorlevel 1 goto :erro_git
 
 git diff --cached --quiet
 if not errorlevel 1 (
-    echo.
-    echo Nenhuma alteracao encontrada. O GitHub ja esta atualizado.
-    echo.
-    pause
-    exit /b 0
-)
+    echo Nenhuma alteracao nova encontrada. O GitHub ja esta atualizado.
+) else (
+    set "DATA_HORA=%date% %time:~0,8%"
+    git commit -m "Atualizacao automatica - %DATA_HORA%"
+    if errorlevel 1 goto :erro_git
 
-set "DATA_HORA=%date% %time:~0,8%"
-echo Criando atualizacao...
-git commit -m "Atualizacao automatica - %DATA_HORA%"
-if errorlevel 1 goto :erro
-
-echo Enviando para o GitHub...
-git push -u origin "%BRANCH%"
-if errorlevel 1 (
-    echo.
-    echo ERRO: Nao foi possivel enviar para o GitHub.
-    echo Verifique a internet e faca login no GitHub quando solicitado.
-    echo Se o repositorio for privado, sua conta precisa ter acesso.
-    echo.
-    pause
-    exit /b 1
+    git push -u origin "%BRANCH%"
+    if errorlevel 1 goto :erro_git
 )
 
 echo.
+echo [2/2] Abrindo o projeto no Lovable para aplicar o banco...
+
+if exist "%PROMPT_FILE%" (
+    type "%PROMPT_FILE%" | clip
+    echo O comando foi copiado para a area de transferencia.
+    echo No chat do Lovable, pressione CTRL+V e envie.
+) else (
+    echo AVISO: O arquivo %PROMPT_FILE% nao foi encontrado.
+)
+
+start "" "%LOVABLE_URL%"
+
+echo.
 echo ==================================================
-echo ATUALIZACAO CONCLUIDA COM SUCESSO!
-echo Repositorio: %REPO_URL%
+echo ARQUIVOS ENVIADOS AO GITHUB.
+echo O LOVABLE FOI ABERTO E O COMANDO DO BANCO FOI COPIADO.
+echo PRESSIONE CTRL+V NO CHAT DO LOVABLE E ENVIE.
 echo ==================================================
 echo.
 pause
 exit /b 0
 
-:erro
+:erro_git
 echo.
-echo ERRO: A atualizacao nao foi concluida.
-echo Revise as mensagens acima e tente novamente.
+echo ERRO: Nao foi possivel enviar os arquivos ao GitHub.
+echo Verifique a internet e o login do GitHub e tente novamente.
 echo.
 pause
 exit /b 1

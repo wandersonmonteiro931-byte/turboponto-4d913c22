@@ -407,3 +407,6 @@ $$;
 CREATE TRIGGER trg_seed_cargos_nova_empresa
   AFTER INSERT ON public.empresas
   FOR EACH ROW EXECUTE FUNCTION public.seed_cargos_nova_empresa();
+
+-- Forca o PostgREST a reconhecer a nova tabela imediatamente.
+NOTIFY pgrst, 'reload schema';

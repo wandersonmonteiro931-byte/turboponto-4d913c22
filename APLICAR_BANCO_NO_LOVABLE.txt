@@ -1,0 +1,17 @@
+CORRIJA SOMENTE O BANCO DE DADOS DA SECAO CARGOS.
+
+Execute no banco conectado a este projeto a migracao existente:
+supabase/migrations/20260801164300_adicionar_cargos.sql
+
+NAO altere layout, rotas, telas, estilos ou outras funcionalidades.
+NAO crie outra implementacao de cargos.
+
+A migracao deve:
+1. Criar public.cargos.
+2. Manter as politicas RLS e permissoes definidas no arquivo.
+3. Cadastrar os 320 cargos para todas as empresas ja existentes.
+4. Cadastrar automaticamente os mesmos cargos quando uma nova empresa for criada.
+5. Recarregar o schema do PostgREST.
+6. Confirmar que a tela Cargos consegue listar e cadastrar cargos sem o erro "Could not find the table public.cargos in the schema cache".
+
+Aplique a migracao no ambiente usado pelo aplicativo publicado e publique a atualizacao.
