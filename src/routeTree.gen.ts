@@ -31,6 +31,7 @@ import { Route as AppEmpresaRelatoriosRouteImport } from './routes/app/empresa/r
 import { Route as AppEmpresaRegistrosRouteImport } from './routes/app/empresa/registros'
 import { Route as AppEmpresaLotacoesRouteImport } from './routes/app/empresa/lotacoes'
 import { Route as AppEmpresaCargosRouteImport } from './routes/app/empresa/cargos'
+import { Route as AppEmpresaDocumentacaoRouteImport } from './routes/app/empresa/documentacao'
 import { Route as AppEmpresaJustificativasRelatorioRouteImport } from './routes/app/empresa/justificativas-relatorio'
 import { Route as AppEmpresaJustificativasPendentesRouteImport } from './routes/app/empresa/justificativas-pendentes'
 import { Route as AppEmpresaJustificativasMassaRouteImport } from './routes/app/empresa/justificativas-massa'
@@ -163,6 +164,11 @@ const AppEmpresaCargosRoute = AppEmpresaCargosRouteImport.update({
   path: '/cargos',
   getParentRoute: () => AppEmpresaRoute,
 } as any)
+const AppEmpresaDocumentacaoRoute = AppEmpresaDocumentacaoRouteImport.update({
+  id: '/documentacao',
+  path: '/documentacao',
+  getParentRoute: () => AppEmpresaRoute,
+} as any)
 const AppEmpresaJustificativasRelatorioRoute =
   AppEmpresaJustificativasRelatorioRouteImport.update({
     id: '/justificativas-relatorio',
@@ -281,6 +287,7 @@ export interface FileRoutesByFullPath {
   '/app/empresa/justificativas-relatorio': typeof AppEmpresaJustificativasRelatorioRoute
   '/app/empresa/lotacoes': typeof AppEmpresaLotacoesRoute
   '/app/empresa/cargos': typeof AppEmpresaCargosRoute
+  '/app/empresa/documentacao': typeof AppEmpresaDocumentacaoRoute
   '/app/empresa/registros': typeof AppEmpresaRegistrosRoute
   '/app/empresa/relatorios': typeof AppEmpresaRelatoriosRoute
   '/app/empresa/rubricas': typeof AppEmpresaRubricasRoute
@@ -319,6 +326,7 @@ export interface FileRoutesByTo {
   '/app/empresa/justificativas-relatorio': typeof AppEmpresaJustificativasRelatorioRoute
   '/app/empresa/lotacoes': typeof AppEmpresaLotacoesRoute
   '/app/empresa/cargos': typeof AppEmpresaCargosRoute
+  '/app/empresa/documentacao': typeof AppEmpresaDocumentacaoRoute
   '/app/empresa/registros': typeof AppEmpresaRegistrosRoute
   '/app/empresa/relatorios': typeof AppEmpresaRelatoriosRoute
   '/app/empresa/rubricas': typeof AppEmpresaRubricasRoute
@@ -361,6 +369,7 @@ export interface FileRoutesById {
   '/app/empresa/justificativas-relatorio': typeof AppEmpresaJustificativasRelatorioRoute
   '/app/empresa/lotacoes': typeof AppEmpresaLotacoesRoute
   '/app/empresa/cargos': typeof AppEmpresaCargosRoute
+  '/app/empresa/documentacao': typeof AppEmpresaDocumentacaoRoute
   '/app/empresa/registros': typeof AppEmpresaRegistrosRoute
   '/app/empresa/relatorios': typeof AppEmpresaRelatoriosRoute
   '/app/empresa/rubricas': typeof AppEmpresaRubricasRoute
@@ -404,6 +413,7 @@ export interface FileRouteTypes {
     | '/app/empresa/justificativas-relatorio'
     | '/app/empresa/lotacoes'
     | '/app/empresa/cargos'
+    | '/app/empresa/documentacao'
     | '/app/empresa/registros'
     | '/app/empresa/relatorios'
     | '/app/empresa/rubricas'
@@ -442,6 +452,7 @@ export interface FileRouteTypes {
     | '/app/empresa/justificativas-relatorio'
     | '/app/empresa/lotacoes'
     | '/app/empresa/cargos'
+    | '/app/empresa/documentacao'
     | '/app/empresa/registros'
     | '/app/empresa/relatorios'
     | '/app/empresa/rubricas'
@@ -483,6 +494,7 @@ export interface FileRouteTypes {
     | '/app/empresa/justificativas-relatorio'
     | '/app/empresa/lotacoes'
     | '/app/empresa/cargos'
+    | '/app/empresa/documentacao'
     | '/app/empresa/registros'
     | '/app/empresa/relatorios'
     | '/app/empresa/rubricas'
@@ -663,6 +675,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppEmpresaCargosRouteImport
       parentRoute: typeof AppEmpresaRoute
     }
+    '/app/empresa/documentacao': {
+      id: '/app/empresa/documentacao'
+      path: '/documentacao'
+      fullPath: '/app/empresa/documentacao'
+      preLoaderRoute: typeof AppEmpresaDocumentacaoRouteImport
+      parentRoute: typeof AppEmpresaRoute
+    }
     '/app/empresa/justificativas-relatorio': {
       id: '/app/empresa/justificativas-relatorio'
       path: '/justificativas-relatorio'
@@ -803,6 +822,7 @@ interface AppEmpresaRouteChildren {
   AppEmpresaJustificativasRelatorioRoute: typeof AppEmpresaJustificativasRelatorioRoute
   AppEmpresaLotacoesRoute: typeof AppEmpresaLotacoesRoute
   AppEmpresaCargosRoute: typeof AppEmpresaCargosRoute
+  AppEmpresaDocumentacaoRoute: typeof AppEmpresaDocumentacaoRoute
   AppEmpresaRegistrosRoute: typeof AppEmpresaRegistrosRoute
   AppEmpresaRelatoriosRoute: typeof AppEmpresaRelatoriosRoute
   AppEmpresaRubricasRoute: typeof AppEmpresaRubricasRoute
@@ -832,6 +852,7 @@ const AppEmpresaRouteChildren: AppEmpresaRouteChildren = {
     AppEmpresaJustificativasRelatorioRoute,
   AppEmpresaLotacoesRoute: AppEmpresaLotacoesRoute,
   AppEmpresaCargosRoute: AppEmpresaCargosRoute,
+  AppEmpresaDocumentacaoRoute: AppEmpresaDocumentacaoRoute,
   AppEmpresaRegistrosRoute: AppEmpresaRegistrosRoute,
   AppEmpresaRelatoriosRoute: AppEmpresaRelatoriosRoute,
   AppEmpresaRubricasRoute: AppEmpresaRubricasRoute,

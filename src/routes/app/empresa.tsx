@@ -17,6 +17,7 @@ import {
   Calculator,
   History,
   BriefcaseBusiness,
+  FolderArchive,
 } from "lucide-react";
 import { AppShell, type NavItem } from "@/components/AppShell";
 import { useAuth } from "@/lib/auth";
@@ -50,6 +51,7 @@ const items: NavItem[] = [
   { to: "/app/empresa/banco-horas", label: "Banco de Horas", icon: <Wallet className="h-4 w-4" /> },
   { to: "/app/empresa/beneficios", label: "Benefícios", icon: <Gift className="h-4 w-4" /> },
   { to: "/app/empresa/holerites", label: "Holerites", icon: <FileText className="h-4 w-4" /> },
+  { to: "/app/empresa/documentacao", label: "Documentação", icon: <FolderArchive className="h-4 w-4" /> },
   { to: "/app/empresa/rubricas", label: "Rubricas Holerite", icon: <FileText className="h-4 w-4" /> },
   { to: "/app/empresa/lotacoes", label: "Lotações", icon: <Building2 className="h-4 w-4" /> },
   { to: "/app/empresa/cargos", label: "Cargos", icon: <BriefcaseBusiness className="h-4 w-4" /> },

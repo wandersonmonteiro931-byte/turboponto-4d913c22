@@ -161,6 +161,7 @@ function FuncionarioDetail() {
           <TabsTrigger value="cartao">Cartão de ponto</TabsTrigger>
           <TabsTrigger value="beneficios">Benefícios</TabsTrigger>
           <TabsTrigger value="holerites">Holerites</TabsTrigger>
+          <TabsTrigger value="documentacao">Documentação</TabsTrigger>
           <TabsTrigger value="historico">Histórico</TabsTrigger>
         </TabsList>
 
@@ -347,6 +348,26 @@ function FuncionarioDetail() {
 
         <TabsContent value="jornada">
           <JornadaTab funcionarioId={id} canEdit={isAdmin} />
+        </TabsContent>
+
+        <TabsContent value="documentacao">
+          <Card>
+            <CardHeader>
+              <CardTitle>Documentação do funcionário</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                Acesse a pasta trabalhista para cadastrar documentos admissionais, contratos, ASO, medidas disciplinares,
+                afastamentos e desligamentos deste funcionário.
+              </p>
+              <a
+                href={`/app/empresa/documentacao?funcionario=${id}`}
+                className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+              >
+                Abrir documentação
+              </a>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         {(["registros", "cartao", "beneficios", "holerites", "historico"] as const).map((t) => (
