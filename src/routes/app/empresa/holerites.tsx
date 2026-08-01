@@ -1702,6 +1702,8 @@ function EditorDialog({
     }>
   >([]);
 
+  const funcionarioDoHolerite = useMemo(() => funcs.find((f) => f.id === funcId), [funcs, funcId]);
+
   useEffect(() => {
     void supabase
       .from("holerite_rubricas")
@@ -2168,6 +2170,14 @@ function EditorDialog({
                 </SelectContent>
               </Select>
             </Fld>
+            <Fld label="Cargo">
+              <Input
+                value={funcionarioDoHolerite?.cargo ?? ""}
+                readOnly
+                aria-readonly="true"
+                className="cursor-default bg-muted/40"
+              />
+            </Fld>
             <Fld label="Tipo de folha">
               <Select value={folhaTipo} onValueChange={setFolhaTipo}>
                 <SelectTrigger>
@@ -2220,27 +2230,52 @@ function EditorDialog({
                 type="number"
                 step="0.01"
                 value={salarioContratual}
-                onChange={(e) => setSalarioContratual(Number(e.target.value))}
+                readOnly
+                aria-readonly="true"
+                className="cursor-default bg-muted/40"
               />
             </Fld>
             <Fld label="Banco / Agência">
-              <Input value={bancoAg} onChange={(e) => setBancoAg(e.target.value)} placeholder="237/02402" />
+              <Input
+                value={bancoAg}
+                readOnly
+                aria-readonly="true"
+                className="cursor-default bg-muted/40"
+              />
             </Fld>
             <Fld label="Conta">
-              <Input value={conta} onChange={(e) => setConta(e.target.value)} />
+              <Input
+                value={conta}
+                readOnly
+                aria-readonly="true"
+                className="cursor-default bg-muted/40"
+              />
             </Fld>
             <Fld label="Nº Dep. IRRF">
-              <Input type="number" value={numDepIrrf} onChange={(e) => setNumDepIrrf(Number(e.target.value))} />
+              <Input
+                type="number"
+                value={numDepIrrf}
+                readOnly
+                aria-readonly="true"
+                className="cursor-default bg-muted/40"
+              />
             </Fld>
             <Fld label="Nº Dep. Sal. Fam.">
-              <Input type="number" value={numDepSalFam} onChange={(e) => setNumDepSalFam(Number(e.target.value))} />
+              <Input
+                type="number"
+                value={numDepSalFam}
+                readOnly
+                aria-readonly="true"
+                className="cursor-default bg-muted/40"
+              />
             </Fld>
             <div className="col-span-2 sm:col-span-4">
               <Fld label="Lotação">
                 <Input
                   value={lotacao}
-                  onChange={(e) => setLotacao(e.target.value)}
-                  placeholder="Ex.: 5001000105 - FABRIL - ANAPOLIS-GO"
+                  readOnly
+                  aria-readonly="true"
+                  className="cursor-default bg-muted/40"
                 />
               </Fld>
             </div>
