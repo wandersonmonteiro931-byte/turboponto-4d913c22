@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { Check, ChevronsUpDown, Plus } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import {
   Command,
@@ -16,13 +15,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
+import {
+  carregarCargos,
+  criarCargoLocal,
+  ouvirAtualizacaoCargos,
+  type CargoCadastro,
+} from "@/lib/cargos";
 import { toast } from "sonner";
-
-type Cargo = {
-  id: string;
-  codigo: string;
-  nome: string;
-};
 
 export function CargoSelect({
   empresaId,
@@ -39,50 +38,20 @@ export function CargoSelect({
   const [novoOpen, setNovoOpen] = useState(false);
   const [novoNome, setNovoNome] = useState("");
   const [salvando, setSalvando] = useState(false);
-  const [cargos, setCargos] = useState<Cargo[]>([]);
+  const [cargos, setCargos] = useState<CargoCadastro[]>([]);
 
-  const carregar = async () => {
-    if (!empresaId) {
-      setCargos([]);
-      return;
-    }
-
-    const { data, error } = await supabase
-      .from("cargos")
-      .select("id,codigo,nome")
-      .eq("empresa_id", empresaId)
-      .eq("ativo", true)
-      .order("codigo");
-
-    if (error) {
-      toast.error(error.message);
-      return;
-    }
-
-    setCargos((data ?? []) as Cargo[]);
+  const carregar = () => {
+    setCargos(carregarCargos(empresaId).filter((cargo) => cargo.ativo));
   };
 
   useEffect(() => {
-    void carregar();
+    carregar();
+    if (!empresaId) return;
+    return ouvirAtualizacaoCargos(empresaId, carregar);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [empresaId]);
 
-  const proximoCodigo = async () => {
-    if (!empresaId) return "0001";
-
-    const { data } = await supabase
-      .from("cargos")
-      .select("codigo")
-      .eq("empresa_id", empresaId)
-      .order("codigo", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    const atual = Number.parseInt(data?.codigo ?? "0", 10);
-    return String(Number.isFinite(atual) ? atual + 1 : 1).padStart(4, "0");
-  };
-
-  const cadastrar = async () => {
+  const cadastrar = () => {
     if (!empresaId) return;
     const nome = novoNome.trim().toUpperCase();
 
@@ -90,22 +59,18 @@ export function CargoSelect({
     if (nome.length > 10) return toast.error("O cargo deve ter no máximo 10 caracteres");
 
     setSalvando(true);
-    const codigo = await proximoCodigo();
-    const { error } = await supabase.from("cargos").insert({
-      empresa_id: empresaId,
-      codigo,
-      nome,
-      ativo: true,
-    });
-    setSalvando(false);
-
-    if (error) return toast.error(error.message);
-
-    await carregar();
-    onChange(nome);
-    setNovoNome("");
-    setNovoOpen(false);
-    toast.success("Cargo cadastrado");
+    try {
+      const cargo = criarCargoLocal(empresaId, nome);
+      carregar();
+      onChange(cargo.nome);
+      setNovoNome("");
+      setNovoOpen(false);
+      toast.success("Cargo cadastrado");
+    } catch {
+      toast.error("Não foi possível salvar o cargo neste navegador");
+    } finally {
+      setSalvando(false);
+    }
   };
 
   return (
@@ -189,7 +154,7 @@ export function CargoSelect({
               onKeyDown={(event) => {
                 if (event.key === "Enter") {
                   event.preventDefault();
-                  void cadastrar();
+                  cadastrar();
                 }
               }}
             />
@@ -199,7 +164,7 @@ export function CargoSelect({
             <Button type="button" variant="ghost" onClick={() => setNovoOpen(false)}>
               Cancelar
             </Button>
-            <Button type="button" onClick={() => void cadastrar()} disabled={salvando}>
+            <Button type="button" onClick={cadastrar} disabled={salvando}>
               {salvando ? "Salvando..." : "Cadastrar"}
             </Button>
           </DialogFooter>

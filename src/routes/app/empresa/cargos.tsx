@@ -9,47 +9,32 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
+import {
+  carregarCargos,
+  criarCargoLocal,
+  ouvirAtualizacaoCargos,
+  salvarCargos,
+  type CargoCadastro,
+} from "@/lib/cargos";
 
 export const Route = createFileRoute("/app/empresa/cargos")({
   component: CargosPage,
 });
 
-type Cargo = {
-  id: string;
-  codigo: string;
-  nome: string;
-  ativo: boolean;
-};
-
 function CargosPage() {
   const { empresaId, role } = useAuth();
   const podeEditar = role === "admin";
-  const [lista, setLista] = useState<Cargo[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [lista, setLista] = useState<CargoCadastro[]>([]);
   const [busca, setBusca] = useState("");
   const [open, setOpen] = useState(false);
-  const [edit, setEdit] = useState<Cargo | null>(null);
+  const [edit, setEdit] = useState<CargoCadastro | null>(null);
 
-  const carregar = async () => {
-    if (!empresaId) {
-      setLoading(false);
-      return;
-    }
-
-    setLoading(true);
-    const { data, error } = await supabase
-      .from("cargos")
-      .select("id,codigo,nome,ativo")
-      .eq("empresa_id", empresaId)
-      .order("codigo");
-
-    if (error) toast.error(error.message);
-    setLista((data ?? []) as Cargo[]);
-    setLoading(false);
-  };
+  const carregar = () => setLista(carregarCargos(empresaId));
 
   useEffect(() => {
-    void carregar();
+    carregar();
+    if (!empresaId) return;
+    return ouvirAtualizacaoCargos(empresaId, carregar);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [empresaId]);
 
@@ -59,25 +44,30 @@ function CargosPage() {
     return lista.filter((cargo) => cargo.nome.toLowerCase().includes(termo) || cargo.codigo.includes(termo));
   }, [busca, lista]);
 
-  const remover = async (cargo: Cargo) => {
+  const remover = async (cargo: CargoCadastro) => {
     if (!empresaId) return;
     if (!confirm(`Remover o cargo ${cargo.nome}?`)) return;
 
-    const { count } = await supabase
+    const { count, error } = await supabase
       .from("funcionarios")
       .select("id", { count: "exact", head: true })
       .eq("empresa_id", empresaId)
       .eq("cargo", cargo.nome);
 
+    if (error) return toast.error(error.message);
     if ((count ?? 0) > 0) {
       return toast.error("Este cargo está vinculado a funcionário. Inative-o em vez de remover.");
     }
 
-    const { error } = await supabase.from("cargos").delete().eq("id", cargo.id);
-    if (error) return toast.error(error.message);
-
-    toast.success("Cargo removido");
-    await carregar();
+    try {
+      salvarCargos(
+        empresaId,
+        lista.filter((item) => item.id !== cargo.id),
+      );
+      toast.success("Cargo removido");
+    } catch {
+      toast.error("Não foi possível remover o cargo");
+    }
   };
 
   if (!empresaId) {
@@ -117,9 +107,7 @@ function CargosPage() {
 
       <Card>
         <CardContent className="p-0">
-          {loading ? (
-            <div className="p-8 text-center text-sm text-muted-foreground">Carregando...</div>
-          ) : filtrada.length === 0 ? (
+          {filtrada.length === 0 ? (
             <div className="p-8 text-center text-sm text-muted-foreground">Nenhum cargo encontrado.</div>
           ) : (
             <div className="overflow-x-auto">
@@ -171,7 +159,7 @@ function CargosPage() {
           onClose={() => setOpen(false)}
           onSaved={() => {
             setOpen(false);
-            void carregar();
+            carregar();
           }}
         />
       )}
@@ -186,7 +174,7 @@ function EditorCargo({
   onSaved,
 }: {
   empresaId: string;
-  cargo: Cargo | null;
+  cargo: CargoCadastro | null;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -194,62 +182,51 @@ function EditorCargo({
   const [ativo, setAtivo] = useState(cargo?.ativo ?? true);
   const [salvando, setSalvando] = useState(false);
 
-  const proximoCodigo = async () => {
-    const { data } = await supabase
-      .from("cargos")
-      .select("codigo")
-      .eq("empresa_id", empresaId)
-      .order("codigo", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    const atual = Number.parseInt(data?.codigo ?? "0", 10);
-    return String(Number.isFinite(atual) ? atual + 1 : 1).padStart(4, "0");
-  };
-
   const salvar = async () => {
     const nomeFinal = nome.trim().toUpperCase();
     if (!nomeFinal) return toast.error("Informe o nome do cargo");
     if (nomeFinal.length > 10) return toast.error("O cargo deve ter no máximo 10 caracteres");
 
     setSalvando(true);
-
-    if (cargo) {
-      const { error } = await supabase.from("cargos").update({ nome: nomeFinal, ativo }).eq("id", cargo.id);
-      if (error) {
-        setSalvando(false);
-        return toast.error(error.message);
+    try {
+      const listaAtual = carregarCargos(empresaId);
+      const duplicado = listaAtual.some((item) => item.id !== cargo?.id && item.nome === nomeFinal);
+      if (duplicado) {
+        toast.error("Este cargo já está cadastrado");
+        return;
       }
 
-      if (cargo.nome !== nomeFinal) {
-        const { error: funcionariosError } = await supabase
-          .from("funcionarios")
-          .update({ cargo: nomeFinal })
-          .eq("empresa_id", empresaId)
-          .eq("cargo", cargo.nome);
+      if (cargo) {
+        salvarCargos(
+          empresaId,
+          listaAtual.map((item) => (item.id === cargo.id ? { ...item, nome: nomeFinal, ativo } : item)),
+        );
 
-        if (funcionariosError) {
-          setSalvando(false);
-          return toast.error(funcionariosError.message);
+        if (cargo.nome !== nomeFinal) {
+          const { error } = await supabase
+            .from("funcionarios")
+            .update({ cargo: nomeFinal })
+            .eq("empresa_id", empresaId)
+            .eq("cargo", cargo.nome);
+          if (error) throw error;
+        }
+      } else {
+        const novo = criarCargoLocal(empresaId, nomeFinal);
+        if (!ativo) {
+          const atualizados = carregarCargos(empresaId).map((item) =>
+            item.id === novo.id ? { ...item, ativo: false } : item,
+          );
+          salvarCargos(empresaId, atualizados);
         }
       }
-    } else {
-      const codigo = await proximoCodigo();
-      const { error } = await supabase.from("cargos").insert({
-        empresa_id: empresaId,
-        codigo,
-        nome: nomeFinal,
-        ativo,
-      });
-      if (error) {
-        setSalvando(false);
-        return toast.error(error.message);
-      }
-    }
 
-    setSalvando(false);
-    toast.success("Cargo salvo");
-    onSaved();
+      toast.success("Cargo salvo");
+      onSaved();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível salvar o cargo");
+    } finally {
+      setSalvando(false);
+    }
   };
 
   return (
