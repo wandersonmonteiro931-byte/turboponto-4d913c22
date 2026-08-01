@@ -32,6 +32,7 @@ import {
   CATEGORIAS_DOCUMENTOS,
   carregarDocumentos,
   criarIdDocumento,
+  documentoExigeDetalhes,
   excluirArquivoDocumento,
   formatarTamanho,
   gerarModeloPdf,
@@ -142,6 +143,7 @@ function DocumentacaoPage() {
   const [catalogoBusca, setCatalogoBusca] = useState("");
   const [catalogoCategoria, setCatalogoCategoria] = useState("todas");
   const [aba, setAba] = useState("arquivo");
+  const [preview, setPreview] = useState<{ url: string; nome: string; tipo: string } | null>(null);
 
   const carregar = async () => {
     if (!empresaId) {
@@ -164,8 +166,52 @@ function DocumentacaoPage() {
     ]);
     setFuncionarios((funcs ?? []) as FuncionarioDocumento[]);
     setEmpresa((emp ?? null) as EmpresaDocumento | null);
-    setDocumentos(docs.documentos);
-    setSincronizado(docs.remoto);
+
+    let documentosCarregados = docs.documentos;
+    let remoto = docs.remoto;
+
+    // Migra automaticamente arquivos que a versão anterior deixou apenas no navegador.
+    if (podeEditar && documentosCarregados.some((doc) => !!doc.localFileId && !doc.storagePath)) {
+      let houveMigracao = false;
+      const migrados: DocumentoRH[] = [];
+      for (const documento of documentosCarregados) {
+        if (!documento.localFileId || documento.storagePath) {
+          migrados.push(documento);
+          continue;
+        }
+        try {
+          const blob = await obterArquivoDocumento(documento);
+          const arquivo = new File(
+            [blob],
+            documento.arquivoNome || `${documento.titulo}.pdf`,
+            { type: documento.arquivoTipo || blob.type || "application/octet-stream" },
+          );
+          const envio = await enviarArquivoDocumento(empresaId, documento.id, arquivo, documento.funcionarioId);
+          if (envio.remoto) {
+            houveMigracao = true;
+            migrados.push({
+              ...documento,
+              storagePath: envio.storagePath,
+              storageBucket: envio.storageBucket,
+              localFileId: null,
+              atualizadoEm: new Date().toISOString(),
+            });
+            continue;
+          }
+        } catch (error) {
+          console.warn("[documentacao] arquivo local ainda não sincronizado", error);
+        }
+        migrados.push(documento);
+      }
+      documentosCarregados = migrados;
+      if (houveMigracao) {
+        const resultadoMigracao = await salvarDocumentos(empresaId, documentosCarregados);
+        remoto = resultadoMigracao.remoto;
+      }
+    }
+
+    setDocumentos(documentosCarregados);
+    setSincronizado(remoto);
 
     const queryFuncionario = new URLSearchParams(window.location.search).get("funcionario");
     if (queryFuncionario && (funcs ?? []).some((item) => item.id === queryFuncionario)) {
@@ -232,19 +278,38 @@ function DocumentacaoPage() {
     };
   }, [documentos]);
 
+  const baixarBlob = (blob: Blob, nomeArquivo: string) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = nomeArquivo;
+    a.style.display = "none";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 5_000);
+  };
+
+  const fecharPreview = () => {
+    if (preview?.url) URL.revokeObjectURL(preview.url);
+    setPreview(null);
+  };
+
   const abrirArquivo = async (documento: DocumentoRH, baixar = false) => {
     try {
       const blob = await obterArquivoDocumento(documento);
-      const url = URL.createObjectURL(blob);
+      const nomeArquivo = documento.arquivoNome ?? `${documento.titulo}.pdf`;
       if (baixar) {
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = documento.arquivoNome ?? documento.titulo;
-        a.click();
-      } else {
-        window.open(url, "_blank", "noopener,noreferrer");
+        baixarBlob(blob, nomeArquivo);
+        return;
       }
-      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+
+      if (preview?.url) URL.revokeObjectURL(preview.url);
+      setPreview({
+        url: URL.createObjectURL(blob),
+        nome: nomeArquivo,
+        tipo: documento.arquivoTipo || blob.type || "application/octet-stream",
+      });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Não foi possível abrir o arquivo");
     }
@@ -303,10 +368,9 @@ function DocumentacaoPage() {
       {!sincronizado && (
         <Alert className="border-amber-300 bg-amber-50 text-amber-950">
           <AlertTriangle className="h-4 w-4" />
-          <AlertTitle>Armazenamento da empresa indisponível</AlertTitle>
+          <AlertTitle>Sincronização temporariamente indisponível</AlertTitle>
           <AlertDescription>
-            Os registros estão funcionando neste navegador. Para sincronizar arquivos entre dispositivos, a empresa deve
-            manter disponível o bucket já utilizado pelo sistema: <strong>company-assets</strong>.
+            O registro foi preservado neste dispositivo. Tente salvar novamente quando a conexão com o armazenamento do sistema estiver disponível.
           </AlertDescription>
         </Alert>
       )}
@@ -614,6 +678,45 @@ function DocumentacaoPage() {
         </TabsContent>
       </Tabs>
 
+      {preview && (
+        <Dialog open onOpenChange={(open) => !open && fecharPreview()}>
+          <DialogContent className="max-w-[96vw] w-[1100px] h-[92vh] p-0 overflow-hidden flex flex-col">
+            <DialogHeader className="border-b px-5 py-3">
+              <div className="flex items-center justify-between gap-3 pr-8">
+                <DialogTitle className="truncate text-base">{preview.nome}</DialogTitle>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={async () => {
+                    const resposta = await fetch(preview.url);
+                    baixarBlob(await resposta.blob(), preview.nome);
+                  }}
+                >
+                  <Download className="mr-2 h-4 w-4" /> Baixar
+                </Button>
+              </div>
+            </DialogHeader>
+            <div className="flex-1 min-h-0 bg-muted/30">
+              {preview.tipo.includes("pdf") ? (
+                <iframe title={preview.nome} src={`${preview.url}#page=1&zoom=page-width`} className="h-full w-full border-0" />
+              ) : preview.tipo.startsWith("image/") ? (
+                <div className="flex h-full items-center justify-center overflow-auto p-4">
+                  <img src={preview.url} alt={preview.nome} className="max-h-full max-w-full object-contain" />
+                </div>
+              ) : (
+                <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
+                  <FileText className="h-12 w-12 text-muted-foreground" />
+                  <p className="text-sm text-muted-foreground">Este tipo de arquivo não possui visualização no navegador.</p>
+                  <Button onClick={async () => { const resposta = await fetch(preview.url); baixarBlob(await resposta.blob(), preview.nome); }}>
+                    <Download className="mr-2 h-4 w-4" /> Baixar arquivo
+                  </Button>
+                </div>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
       {editorOpen && (
         <DocumentoEditor
           empresaId={empresaId}
@@ -627,7 +730,7 @@ function DocumentacaoPage() {
           onSave={async (documento, arquivo, arquivoAnterior) => {
             let final = documento;
             if (arquivo) {
-              const envio = await enviarArquivoDocumento(empresaId, documento.id, arquivo);
+              const envio = await enviarArquivoDocumento(empresaId, documento.id, arquivo, documento.funcionarioId);
               if (
                 arquivoAnterior &&
                 ((arquivoAnterior.storagePath && arquivoAnterior.storagePath !== envio.storagePath) ||
@@ -641,9 +744,9 @@ function DocumentacaoPage() {
                 arquivoTipo: arquivo.type || null,
                 arquivoTamanho: arquivo.size,
                 storagePath: envio.storagePath,
+                storageBucket: envio.storageBucket,
                 localFileId: envio.localFileId,
               };
-              if (!envio.remoto) toast.warning("O anexo foi salvo somente neste dispositivo porque o armazenamento remoto não permitiu o envio.");
             }
             const existe = documentos.some((item) => item.id === final.id);
             const proximos = existe ? documentos.map((item) => item.id === final.id ? final : item) : [final, ...documentos];
@@ -736,6 +839,9 @@ function DocumentoEditor({
     if (modoArquivo === "gerar_pdf" && escopo === "funcionario" && !funcionarioSelecionado?.matricula?.trim()) {
       return toast.error("O funcionário precisa ter matrícula cadastrada para gerar o PDF automaticamente");
     }
+    if (modoArquivo === "gerar_pdf" && documentoExigeDetalhes(tipo.id) && !observacoes.trim()) {
+      return toast.error("Descreva os fatos, datas e detalhes antes de gerar este documento");
+    }
     const anexoExistenteValido = documento?.arquivoNome && documento.origemArquivo === "anexado";
     if (modoArquivo === "anexar" && !arquivo && !anexoExistenteValido) {
       return toast.error("Selecione o arquivo que será anexado");
@@ -763,6 +869,7 @@ function DocumentoEditor({
         arquivoTipo: documento?.arquivoTipo ?? null,
         arquivoTamanho: documento?.arquivoTamanho ?? null,
         storagePath: documento?.storagePath ?? null,
+        storageBucket: documento?.storageBucket ?? null,
         localFileId: documento?.localFileId ?? null,
         origemArquivo: modoArquivo === "gerar_pdf" ? "gerado_pdf" : "anexado",
         criadoEm: documento?.criadoEm ?? agora,

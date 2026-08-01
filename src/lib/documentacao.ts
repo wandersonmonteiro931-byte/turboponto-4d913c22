@@ -36,6 +36,7 @@ export type DocumentoRH = {
   arquivoTipo: string | null;
   arquivoTamanho: number | null;
   storagePath: string | null;
+  storageBucket: string | null;
   localFileId: string | null;
   origemArquivo: "gerado_pdf" | "anexado" | null;
   criadoEm: string;
@@ -251,7 +252,14 @@ export const CATALOGO_DOCUMENTOS: TipoDocumento[] = [
 export const CATEGORIAS_DOCUMENTOS = Array.from(new Set(CATALOGO_DOCUMENTOS.map((item) => item.categoria)));
 
 const localKey = (empresaId: string) => `turboponto:documentacao:${empresaId}`;
-const indexPath = (empresaId: string) => `${empresaId}/documentacao/index.json`;
+
+// Usa primeiro o bucket privado já utilizado pelo sistema. Os demais ficam apenas
+// como compatibilidade com instalações antigas do projeto.
+const DOCUMENT_READ_BUCKETS = ["holerites", "backup", "company-assets"] as const;
+const DOCUMENT_WRITE_BUCKETS = ["holerites", "backup"] as const;
+type DocumentBucket = (typeof DOCUMENT_READ_BUCKETS)[number];
+const indexPath = (empresaId: string) => `${empresaId}/_documentacao/index.json`;
+const legacyIndexPath = (empresaId: string) => `${empresaId}/documentacao/index.json`;
 
 function normalizarLista(value: unknown, empresaId: string): DocumentoRH[] {
   if (!Array.isArray(value)) return [];
@@ -260,6 +268,7 @@ function normalizarLista(value: unknown, empresaId: string): DocumentoRH[] {
     .map((item) => ({
       ...item,
       empresaId,
+      storageBucket: item.storageBucket ?? (item.storagePath ? "company-assets" : null),
       origemArquivo: item.origemArquivo ?? (item.arquivoNome ? "anexado" : null),
     }));
 }
@@ -278,36 +287,101 @@ function salvarLocal(empresaId: string, documentos: DocumentoRH[]) {
   localStorage.setItem(localKey(empresaId), JSON.stringify(documentos));
 }
 
-export async function carregarDocumentos(empresaId: string): Promise<{ documentos: DocumentoRH[]; remoto: boolean }> {
+function mensagemErro(error: unknown) {
+  if (!error || typeof error !== "object") return String(error ?? "");
+  const value = error as { message?: string; error?: string; statusCode?: string | number; status?: string | number };
+  return `${value.message ?? ""} ${value.error ?? ""} ${value.statusCode ?? ""} ${value.status ?? ""}`.trim();
+}
+
+function objetoNaoEncontrado(error: unknown) {
+  const texto = mensagemErro(error).toLowerCase();
+  return !texto.includes("bucket") && (texto.includes("not found") || texto.includes("object not found") || /(^|\s)404(\s|$)/.test(texto));
+}
+
+async function baixarIndice(bucket: DocumentBucket, path: string, empresaId: string) {
+  const { data, error } = await supabase.storage.from(bucket).download(path);
+  if (error) return { documentos: null as DocumentoRH[] | null, inexistente: objetoNaoEncontrado(error), erro: mensagemErro(error) };
   try {
-    const { data, error } = await supabase.storage.from("company-assets").download(indexPath(empresaId));
-    if (error) throw error;
-    const texto = await data.text();
-    const documentos = normalizarLista(JSON.parse(texto), empresaId);
-    salvarLocal(empresaId, documentos);
-    return { documentos, remoto: true };
+    return { documentos: normalizarLista(JSON.parse(await data.text()), empresaId), inexistente: false, erro: "" };
   } catch {
-    return { documentos: lerLocal(empresaId), remoto: false };
+    return { documentos: null as DocumentoRH[] | null, inexistente: false, erro: "Índice de documentação inválido" };
   }
+}
+
+export async function carregarDocumentos(empresaId: string): Promise<{ documentos: DocumentoRH[]; remoto: boolean }> {
+  const local = lerLocal(empresaId);
+  const tentativas: { documentos: DocumentoRH[]; bucket: DocumentBucket }[] = [];
+  let armazenamentoEncontrado = false;
+
+  for (const bucket of DOCUMENT_READ_BUCKETS) {
+    for (const path of [indexPath(empresaId), legacyIndexPath(empresaId)]) {
+      const resultado = await baixarIndice(bucket, path, empresaId);
+      if (resultado.documentos) {
+        armazenamentoEncontrado = true;
+        tentativas.push({ documentos: resultado.documentos, bucket });
+        break;
+      }
+      if (resultado.inexistente) armazenamentoEncontrado = true;
+    }
+  }
+
+  if (tentativas.length) {
+    const maisAtual = tentativas.sort((a, b) => {
+      const dataA = Math.max(0, ...a.documentos.map((doc) => Date.parse(doc.atualizadoEm || doc.criadoEm || "") || 0));
+      const dataB = Math.max(0, ...b.documentos.map((doc) => Date.parse(doc.atualizadoEm || doc.criadoEm || "") || 0));
+      return dataB - dataA;
+    })[0].documentos;
+
+    const porId = new Map(maisAtual.map((doc) => [doc.id, doc]));
+    for (const localDoc of local) {
+      const remotoDoc = porId.get(localDoc.id);
+      const localData = Date.parse(localDoc.atualizadoEm || localDoc.criadoEm || "") || 0;
+      const remotoData = remotoDoc ? Date.parse(remotoDoc.atualizadoEm || remotoDoc.criadoEm || "") || 0 : -1;
+      if (!remotoDoc || localData > remotoData) porId.set(localDoc.id, localDoc);
+    }
+    const mesclados = Array.from(porId.values()).sort((a, b) => b.dataDocumento.localeCompare(a.dataDocumento));
+    salvarLocal(empresaId, mesclados);
+    const existeArquivoSomenteLocal = mesclados.some((doc) => !!doc.localFileId && !doc.storagePath);
+    return { documentos: mesclados, remoto: !existeArquivoSomenteLocal };
+  }
+
+  // Um índice inexistente em uma instalação nova não é erro de armazenamento.
+  const existeArquivoSomenteLocal = local.some((doc) => !!doc.localFileId && !doc.storagePath);
+  return { documentos: local, remoto: !existeArquivoSomenteLocal && (armazenamentoEncontrado || local.length === 0) };
+}
+
+async function enviarIndiceParaBucket(bucket: DocumentBucket, empresaId: string, blob: Blob) {
+  const { error } = await supabase.storage.from(bucket).upload(indexPath(empresaId), blob, {
+    upsert: true,
+    contentType: "application/json",
+    cacheControl: "0",
+  });
+  if (error) throw error;
 }
 
 export async function salvarDocumentos(
   empresaId: string,
   documentos: DocumentoRH[],
-): Promise<{ remoto: boolean; erro?: string }> {
+): Promise<{ remoto: boolean; erro?: string; bucket?: string }> {
   salvarLocal(empresaId, documentos);
-  try {
-    const blob = new Blob([JSON.stringify(documentos, null, 2)], { type: "application/json" });
-    const { error } = await supabase.storage.from("company-assets").upload(indexPath(empresaId), blob, {
-      upsert: true,
-      contentType: "application/json",
-      cacheControl: "0",
-    });
-    if (error) throw error;
-    return { remoto: true };
-  } catch (error) {
-    return { remoto: false, erro: error instanceof Error ? error.message : "Falha ao sincronizar documentos" };
+  const existeArquivoSomenteLocal = documentos.some((doc) => !!doc.localFileId && !doc.storagePath);
+  const documentosSincronizaveis = documentos.filter((doc) => !doc.localFileId || !!doc.storagePath);
+  const blob = new Blob([JSON.stringify(documentosSincronizaveis, null, 2)], { type: "application/json" });
+  const erros: string[] = [];
+
+  for (const bucket of DOCUMENT_WRITE_BUCKETS) {
+    try {
+      await enviarIndiceParaBucket(bucket, empresaId, blob);
+      if (existeArquivoSomenteLocal) {
+        return { remoto: false, bucket, erro: "Há arquivo(s) preservado(s) somente neste dispositivo" };
+      }
+      return { remoto: true, bucket };
+    } catch (error) {
+      erros.push(`${bucket}: ${mensagemErro(error) || "falha no envio"}`);
+    }
   }
+
+  return { remoto: false, erro: erros.join(" | ") || "Falha ao sincronizar documentos" };
 }
 
 function abrirDb(): Promise<IDBDatabase> {
@@ -369,34 +443,49 @@ export async function enviarArquivoDocumento(
   empresaId: string,
   documentoId: string,
   file: File,
-): Promise<{ storagePath: string | null; localFileId: string | null; remoto: boolean; erro?: string }> {
-  const path = `${empresaId}/documentacao/arquivos/${documentoId}-${nomeSeguro(file.name)}`;
-  try {
-    const { error } = await supabase.storage.from("company-assets").upload(path, file, {
-      upsert: true,
-      contentType: file.type || "application/octet-stream",
-    });
-    if (error) throw error;
-    return { storagePath: path, localFileId: null, remoto: true };
-  } catch (error) {
+  funcionarioId?: string | null,
+): Promise<{ storagePath: string | null; storageBucket: string | null; localFileId: string | null; remoto: boolean; erro?: string }> {
+  const pasta = funcionarioId || "_empresa";
+  const path = `${empresaId}/${pasta}/documentacao/${documentoId}-${nomeSeguro(file.name)}`;
+  const erros: string[] = [];
+
+  for (const bucket of DOCUMENT_WRITE_BUCKETS) {
     try {
-      await salvarArquivoLocal(documentoId, file);
-      return {
-        storagePath: null,
-        localFileId: documentoId,
-        remoto: false,
-        erro: error instanceof Error ? error.message : "Arquivo salvo somente neste dispositivo",
-      };
-    } catch {
-      throw error;
+      const { error } = await supabase.storage.from(bucket).upload(path, file, {
+        upsert: true,
+        contentType: file.type || "application/octet-stream",
+        cacheControl: "0",
+      });
+      if (error) throw error;
+      return { storagePath: path, storageBucket: bucket, localFileId: null, remoto: true };
+    } catch (error) {
+      erros.push(`${bucket}: ${mensagemErro(error) || "falha no envio"}`);
     }
+  }
+
+  try {
+    await salvarArquivoLocal(documentoId, file);
+    return {
+      storagePath: null,
+      storageBucket: null,
+      localFileId: documentoId,
+      remoto: false,
+      erro: erros.join(" | ") || "Arquivo salvo somente neste dispositivo",
+    };
+  } catch {
+    throw new Error(erros.join(" | ") || "Não foi possível salvar o arquivo");
   }
 }
 
 export async function obterArquivoDocumento(documento: DocumentoRH): Promise<Blob> {
   if (documento.storagePath) {
-    const { data, error } = await supabase.storage.from("company-assets").download(documento.storagePath);
-    if (!error && data) return data;
+    const buckets = documento.storageBucket
+      ? [documento.storageBucket, ...DOCUMENT_READ_BUCKETS.filter((item) => item !== documento.storageBucket)]
+      : [...DOCUMENT_READ_BUCKETS];
+    for (const bucket of buckets) {
+      const { data, error } = await supabase.storage.from(bucket).download(documento.storagePath);
+      if (!error && data) return data;
+    }
   }
   if (documento.localFileId) {
     const data = await obterArquivoLocal(documento.localFileId);
@@ -407,11 +496,27 @@ export async function obterArquivoDocumento(documento: DocumentoRH): Promise<Blo
 
 export async function excluirArquivoDocumento(documento: DocumentoRH) {
   if (documento.storagePath) {
-    await supabase.storage.from("company-assets").remove([documento.storagePath]);
+    const buckets = documento.storageBucket ? [documento.storageBucket] : [...DOCUMENT_READ_BUCKETS];
+    await Promise.allSettled(buckets.map((bucket) => supabase.storage.from(bucket).remove([documento.storagePath!])));
   }
   if (documento.localFileId) {
     await removerArquivoLocal(documento.localFileId);
   }
+}
+
+const TIPOS_EXIGEM_DETALHES = new Set([
+  "orientacao_verbal",
+  "ajuste_conduta",
+  "advertencia",
+  "suspensao",
+  "recusa_assinatura",
+  "dispensa_justa",
+  "devolucao_bens",
+  "plano_melhoria",
+]);
+
+export function documentoExigeDetalhes(tipoId: string) {
+  return TIPOS_EXIGEM_DETALHES.has(tipoId);
 }
 
 export function statusDocumento(documento: DocumentoRH, hoje = new Date()): StatusDocumento {
@@ -454,7 +559,7 @@ function textoModelo(documento: DocumentoRH, funcionario?: FuncionarioDocumento 
   const nome = funcionario?.nome ?? "____________________________________________";
   const cargo = funcionario?.cargo ?? "____________________________";
   const data = dataBr(documento.dataDocumento);
-  const obs = documento.observacoes.trim() || "Descrever de forma objetiva os fatos, datas, locais, orientações e providências adotadas.";
+  const obs = documento.observacoes.trim() || "________________________________________________________________________________";
 
   const textos: Record<string, string[]> = {
     orientacao_verbal: [
@@ -608,38 +713,56 @@ function montarModeloPdf(
     y += linhas.length * (titulo ? 6 : 5) + (titulo ? 5 : 4);
   });
 
-  if (y > 220) {
+  const alturaPagina = 297;
+  const alturaAssinaturas = 48;
+  if (y + alturaAssinaturas > 274) {
     pdf.addPage();
-    y = 35;
+    y = 55;
   } else {
-    y = Math.max(y + 15, 225);
+    y = Math.max(y + 16, 210);
   }
 
   pdf.setFontSize(9);
   pdf.setFont("helvetica", "normal");
+  pdf.setTextColor(0);
   pdf.line(margem, y, 92, y);
   pdf.line(118, y, largura - margem, y);
-  pdf.text(funcionario?.nome ?? "Empregado(a)", 55, y + 5, { align: "center" });
-  pdf.text(empresa?.responsavel ?? "Representante da empresa", 155, y + 5, { align: "center" });
+  pdf.text(funcionario?.nome ?? "Empregado(a)", 55, y + 5, { align: "center", maxWidth: 72 });
+  pdf.text(empresa?.responsavel ?? "Representante da empresa", 155, y + 5, { align: "center", maxWidth: 72 });
   if (funcionario?.matricula) {
     pdf.setFontSize(7.5);
     pdf.text(`Matrícula: ${funcionario.matricula}`, 55, y + 9, { align: "center" });
   }
-  y += 22;
+  y += 24;
   pdf.setFontSize(9);
   pdf.line(margem, y, 92, y);
   pdf.line(118, y, largura - margem, y);
   pdf.text("Testemunha 1", 55, y + 5, { align: "center" });
   pdf.text("Testemunha 2", 155, y + 5, { align: "center" });
 
-  pdf.setFontSize(7.5);
+  const totalPaginas = pdf.getNumberOfPages();
+  for (let pagina = 1; pagina <= totalPaginas; pagina += 1) {
+    pdf.setPage(pagina);
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(7.2);
+    pdf.setTextColor(100);
+    pdf.text(`Página ${pagina} de ${totalPaginas}`, largura - margem, alturaPagina - 6, { align: "right" });
+  }
+  pdf.setPage(totalPaginas);
+  pdf.setFontSize(7.2);
   pdf.setTextColor(90);
-  pdf.text(
+  const rodape = pdf.splitTextToSize(
     "Modelo administrativo. A aplicação e o conteúdo devem ser conferidos pela contabilidade, medicina do trabalho ou assessoria jurídica conforme o caso concreto.",
-    margem,
-    287,
-    { maxWidth: largura - margem * 2, align: "center" },
+    largura - margem * 2 - 28,
   );
+  pdf.text(rodape, largura / 2, alturaPagina - 16, { align: "center" });
+
+  pdf.setProperties({
+    title: documento.titulo,
+    subject: documento.tipoNome,
+    author: String(empresaNome),
+    creator: "Turbo Ponto",
+  });
 
   const identificador = funcionario?.matricula?.trim() || funcionario?.nome || "empresa";
   const nomeArquivo = nomeSeguro(`${identificador}-${documento.titulo}-${documento.dataDocumento}.pdf`);
