@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import { Plus, Search, UserCircle2, Power, PowerOff, Pencil, Trash2 } from "lucide-react";
 import { criarFuncionario } from "@/lib/funcionarios.functions";
 import { getAccessToken } from "@/lib/session";
+import { CargoSelect } from "@/components/CargoSelect";
 
 export const Route = createFileRoute("/app/empresa/funcionarios/")({
   component: FuncionariosPage,
@@ -330,6 +331,7 @@ function FuncionariosPage() {
 }
 
 function NovoFuncionarioDialog({ onDone }: { onDone: () => void }) {
+  const { empresaId } = useAuth();
   const [form, setForm] = useState({
     nome: "",
     cpf: "",
@@ -408,7 +410,11 @@ function NovoFuncionarioDialog({ onDone }: { onDone: () => void }) {
           <Input value={form.endereco} onChange={(e) => upd("endereco", e.target.value)} />
         </F>
         <F label="Cargo / função">
-          <Input value={form.cargo} onChange={(e) => upd("cargo", e.target.value)} />
+          <CargoSelect
+            empresaId={empresaId}
+            value={form.cargo}
+            onChange={(cargo) => upd("cargo", cargo)}
+          />
         </F>
         <F label="Salário (R$)">
           <Input

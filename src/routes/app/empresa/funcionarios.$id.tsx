@@ -11,6 +11,7 @@ import { ArrowLeft, UserCircle2, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { resetarSenhaFuncionario } from "@/lib/funcionarios.functions";
 import { getAccessToken } from "@/lib/session";
+import { CargoSelect } from "@/components/CargoSelect";
 
 export const Route = createFileRoute("/app/empresa/funcionarios/$id")({
   component: FuncionarioDetail,
@@ -201,7 +202,12 @@ function FuncionarioDetail() {
                 <Input value={v("endereco")} onChange={(e) => upd("endereco", e.target.value)} disabled={!isAdmin} />
               </Fld>
               <Fld label="Cargo">
-                <Input value={v("cargo")} onChange={(e) => upd("cargo", e.target.value)} disabled={!isAdmin} />
+                <CargoSelect
+                  empresaId={empresaId}
+                  value={v("cargo")}
+                  onChange={(cargo) => upd("cargo", cargo)}
+                  disabled={!isAdmin}
+                />
               </Fld>
               <Fld label="Salário">
                 <Input
